@@ -1,119 +1,133 @@
-# Restreindre la création des groupes Microsoft 365 et des équipes Teams
+# Scripts PowerShell – Formation Microsoft 365
 
 🇫🇷 Français · [🇬🇧 English](#english)
 
-Script PowerShell (Microsoft Graph) qui réserve la création des **groupes Microsoft 365**, et donc des **équipes Teams**, des plans Planner ou des sites SharePoint de groupe, aux seuls membres d'un groupe de sécurité.
+Scripts PowerShell présentés dans les exercices de la formation **Microsoft 365 – Administrer la suite complète**. Ils reprennent les manipulations des labs, avec des paramètres à la place des valeurs propres au locataire de lab.
 
-Il automatise la procédure décrite par Microsoft : [Gérer qui peut créer des groupes Microsoft 365](https://learn.microsoft.com/fr-fr/microsoft-365/solutions/manage-creation-of-groups).
+## Les scripts
+
+| Script | Service | Ce qu'il fait |
+|---|---|---|
+| [Exchange-SharedMailbox-Rooms.ps1](Exchange-SharedMailbox-Rooms.ps1) | Exchange Online | Boîte partagée avec Accès total et Envoyer en tant que, conversion d'une boîte utilisateur, salle avec règles de réservation, liste de salles |
+| [Exchange-Inventory-MessageTrace.ps1](Exchange-Inventory-MessageTrace.ps1) | Exchange Online | Inventaire (boîtes partagées, règles de transport, domaines acceptés) et suivi des messages avec `Get-MessageTraceV2` |
+| [Exchange-CalendarPermissions.ps1](Exchange-CalendarPermissions.ps1) | Exchange Online | Droits sur le calendrier d'une salle ou d'une boîte partagée, détection du dossier Calendar / Calendrier, objet réel des réunions conservé |
+| [Exchange-RoomAdditionalResponse.ps1](Exchange-RoomAdditionalResponse.ps1) | Exchange Online | Message HTML ajouté à la réponse automatique d'une salle : modèle intégré compatible Outlook, rempli avec le nom et la capacité de la salle, ou fichier HTML exportable et modifiable |
+| [SharePoint-Inventory-Audit.ps1](SharePoint-Inventory-Audit.ps1) | SharePoint Online | Inventaire des sites, sites ouverts au partage externe, sites supprimés, export CSV |
+| [SharePoint-Sharing-Versions.ps1](SharePoint-Sharing-Versions.ps1) | SharePoint Online | Partage et quota d'un site, limite automatique des versions, expiration des liens « Tout le monde », type de lien par défaut |
+| [OneDrive-Settings.ps1](OneDrive-Settings.ps1) | OneDrive | Conservation des OneDrive supprimés, partage, stockage, accès de l'administrateur au OneDrive d'un utilisateur |
+| [Teams-New-ProjectTeam.ps1](Teams-New-ProjectTeam.ps1) | Teams | Équipe projet normalisée : canaux standards, canal privé, membres |
+| [Restrict-M365GroupCreation.ps1](Restrict-M365GroupCreation.ps1) | Entra ID / Teams | Réserve la création des groupes Microsoft 365 et des équipes Teams aux membres d'un groupe ; `-AllowEveryone` pour revenir en arrière |
+
+Chaque script contient une aide complète en français :
+
+```powershell
+Get-Help .\Exchange-CalendarPermissions.ps1 -Full
+```
+
+## Télécharger un script
+
+- **Un fichier seul** : cliquez sur le script, puis sur l'icône **Download raw file**, en haut à droite du code.
+- **Tous les scripts** : bouton vert **Code**, puis **Download ZIP**.
+
+> ⚠️ **Débloquer les fichiers après téléchargement.** Windows marque les fichiers téléchargés comme provenant d'Internet. Avec la stratégie d'exécution `RemoteSigned`, PowerShell refuse alors de lancer le script (« … is not digitally signed »). Pour lever ce marquage, dans le dossier des scripts :
+>
+> ```powershell
+> Get-ChildItem *.ps1 | Unblock-File
+> ```
+>
+> Pour un seul fichier : clic droit, **Propriétés**, cocher **Débloquer**, puis **OK**.
 
 ## Prérequis
 
-- Windows PowerShell 5.1 ou PowerShell 7.
-- Les modules Microsoft Graph **Beta** suivants :
+Chaque script **installe lui-même les modules qui manquent**, pour l'utilisateur courant (sans droits d'administrateur sur le poste), puis **se connecte au locataire**. Le tableau indique ce qui sera installé et le rôle nécessaire.
 
-  ```powershell
-  Install-Module Microsoft.Graph.Beta.Identity.DirectoryManagement -Scope CurrentUser
-  Install-Module Microsoft.Graph.Beta.Groups -Scope CurrentUser
-  ```
-
-- Un compte **Administrateur général** (ou Administrateur des groupes) et le consentement aux permissions `Directory.ReadWrite.All` et `Group.Read.All`.
-- Un **groupe de sécurité** existant qui contient les personnes autorisées à créer des groupes, par exemple `GRP-Createurs-Equipes`.
-- Une licence **Microsoft Entra ID P1** pour les membres de ce groupe.
-
-## Utilisation
-
-Restreindre la création au groupe `GRP-Createurs-Equipes` :
-
-```powershell
-.\Restrict-M365GroupCreation.ps1 -GroupName "GRP-Createurs-Equipes"
-```
-
-Revenir en arrière (tout le monde peut de nouveau créer des groupes) :
-
-```powershell
-.\Restrict-M365GroupCreation.ps1 -AllowEveryone
-```
-
-Aide complète :
-
-```powershell
-Get-Help .\Restrict-M365GroupCreation.ps1 -Full
-```
-
-Résultat attendu : `EnableGroupCreation` vaut `False` et `GroupCreationAllowedGroupId` contient l'identifiant du groupe autorisé.
+| Scripts | Module installé automatiquement | Rôle minimal |
+|---|---|---|
+| `Exchange-*` | `Install-Module ExchangeOnlineManagement -Scope CurrentUser` | Administrateur Exchange |
+| `SharePoint-*`, `OneDrive-*` | `Install-Module Microsoft.Online.SharePoint.PowerShell -Scope CurrentUser` | Administrateur SharePoint |
+| `Teams-*` | `Install-Module MicrosoftTeams -Scope CurrentUser` | Administrateur Teams |
+| `Restrict-M365GroupCreation` | `Install-Module Microsoft.Graph.Beta.Identity.DirectoryManagement, Microsoft.Graph.Beta.Groups -Scope CurrentUser` | Administrateur général, licence Entra ID P1 pour les membres du groupe autorisé |
 
 ## Bon à savoir
 
-- **Connexion** : dans une console PowerShell, la fenêtre de connexion Windows s'ouvre normalement. Dans **PowerShell ISE**, qui ne peut pas l'afficher, le script passe automatiquement à la **connexion par code d'appareil** : ouvrez https://microsoft.com/devicelogin et saisissez le code affiché. Le paramètre `-UseDeviceCode` force ce mode ailleurs.
-- **Délai** : comptez jusqu'à 30 minutes ou plus avant que la restriction ne s'applique partout, notamment dans Teams.
-- **Les administrateurs** (Administrateur général, Administrateur Teams, etc.) peuvent toujours créer des groupes, même s'ils ne sont pas membres du groupe autorisé.
-- **Erreur « module not found »** : installez les deux modules Beta ci-dessus. Ils ne font pas partie du module `Microsoft.Graph` standard.
-- **Ne mélangez pas** Graph et Exchange Online dans la même fenêtre PowerShell : les deux modules embarquent des versions différentes de la bibliothèque d'authentification et peuvent entrer en conflit.
+- **Connexion au locataire** : chaque script ne demande la connexion que si la session n'est pas déjà connectée, puis affiche le compte et le locataire utilisés. Pour viser un locataire précis : `-UserPrincipalName` (scripts Exchange), `-TenantName` (SharePoint, OneDrive), `-TenantId` (Teams, Restrict-M365GroupCreation).
+- **PowerShell ISE** : ISE ne sait pas afficher la fenêtre de connexion Windows moderne. Les scripts Exchange, Teams et Graph passent alors automatiquement à la **connexion par code d'appareil** : ouvrez https://microsoft.com/devicelogin et saisissez le code affiché.
+- **SharePoint et OneDrive** : utilisez de préférence **Windows PowerShell 5.1**. Sous PowerShell 7, le script charge le module SharePoint Online en mode de compatibilité Windows PowerShell.
+- **Ne mélangez pas** Graph et Exchange Online dans la même fenêtre PowerShell : les deux modules embarquent des versions différentes de la bibliothèque d'authentification et peuvent entrer en conflit. Ouvrez une fenêtre par service.
+- **Lancez les scripts en tant que fichiers** (`.\Nom-Du-Script.ps1`) : ne collez pas leur contenu dans la console, un texte de plusieurs lignes y serait coupé.
+- **Testez** d'abord sur un locataire de test.
 
 ## Auteur
 
-Laurent Cloux, KEYSIA, Microsoft Certified Trainer. Script partagé dans le cadre de formations Microsoft 365.
+Laurent Cloux, KEYSIA, Microsoft Certified Trainer.
 
-Licence [MIT](LICENSE) : réutilisation libre, sans garantie. Testez d'abord sur un locataire de test.
+Licence [MIT](LICENSE) : réutilisation libre, sans garantie.
 
 ---
 
 <a id="english"></a>
 
-# Restrict Microsoft 365 group and Teams team creation
+# PowerShell scripts – Microsoft 365 training
 
-[🇫🇷 Français](#restreindre-la-création-des-groupes-microsoft-365-et-des-équipes-teams) · 🇬🇧 English
+[🇫🇷 Français](#scripts-powershell--formation-microsoft-365) · 🇬🇧 English
 
-A PowerShell script (Microsoft Graph) that restricts the creation of **Microsoft 365 groups**, and therefore **Teams teams**, Planner plans and group-connected SharePoint sites, to the members of a single security group.
+PowerShell scripts shown in the exercises of the **Microsoft 365 administration** training course. They reproduce the lab steps, with parameters instead of values specific to the lab tenant.
 
-It automates the procedure documented by Microsoft: [Manage who can create Microsoft 365 Groups](https://learn.microsoft.com/microsoft-365/solutions/manage-creation-of-groups).
+## The scripts
+
+| Script | Service | What it does |
+|---|---|---|
+| [Exchange-SharedMailbox-Rooms.ps1](Exchange-SharedMailbox-Rooms.ps1) | Exchange Online | Shared mailbox with Full Access and Send As, conversion of a user mailbox, room mailbox with booking rules, room list |
+| [Exchange-Inventory-MessageTrace.ps1](Exchange-Inventory-MessageTrace.ps1) | Exchange Online | Inventory (shared mailboxes, transport rules, accepted domains) and message trace with `Get-MessageTraceV2` |
+| [Exchange-CalendarPermissions.ps1](Exchange-CalendarPermissions.ps1) | Exchange Online | Calendar permissions on a room or shared mailbox, Calendar / Calendrier folder detection, real meeting subject kept |
+| [Exchange-RoomAdditionalResponse.ps1](Exchange-RoomAdditionalResponse.ps1) | Exchange Online | HTML message added to the automatic reply of a room: built-in Outlook-friendly template filled with the room name and capacity, or an HTML file you can export and edit |
+| [SharePoint-Inventory-Audit.ps1](SharePoint-Inventory-Audit.ps1) | SharePoint Online | Site inventory, sites open to external sharing, deleted sites, CSV export |
+| [SharePoint-Sharing-Versions.ps1](SharePoint-Sharing-Versions.ps1) | SharePoint Online | Site sharing and quota, automatic version history limits, "Anyone" link expiration, default link type |
+| [OneDrive-Settings.ps1](OneDrive-Settings.ps1) | OneDrive | Retention of deleted users' OneDrive, sharing, storage, admin access to a user's OneDrive |
+| [Teams-New-ProjectTeam.ps1](Teams-New-ProjectTeam.ps1) | Teams | Standardized project team: standard channels, private channel, members |
+| [Restrict-M365GroupCreation.ps1](Restrict-M365GroupCreation.ps1) | Entra ID / Teams | Restricts Microsoft 365 group and Teams team creation to the members of one group; `-AllowEveryone` to roll back |
+
+Each script includes full help (in French):
+
+```powershell
+Get-Help .\Exchange-CalendarPermissions.ps1 -Full
+```
+
+## Download a script
+
+- **One file**: click the script, then the **Download raw file** icon at the top right of the code.
+- **All scripts**: green **Code** button, then **Download ZIP**.
+
+> ⚠️ **Unblock the files after downloading.** Windows marks downloaded files as coming from the Internet. With the `RemoteSigned` execution policy, PowerShell then refuses to run the script ("… is not digitally signed"). To remove this mark, in the scripts folder:
+>
+> ```powershell
+> Get-ChildItem *.ps1 | Unblock-File
+> ```
+>
+> For a single file: right-click, **Properties**, tick **Unblock**, then **OK**.
 
 ## Requirements
 
-- Windows PowerShell 5.1 or PowerShell 7.
-- The following Microsoft Graph **Beta** modules:
+Each script **installs the missing modules itself**, for the current user (no local admin rights needed), then **signs in to the tenant**. The table shows what gets installed and the role required.
 
-  ```powershell
-  Install-Module Microsoft.Graph.Beta.Identity.DirectoryManagement -Scope CurrentUser
-  Install-Module Microsoft.Graph.Beta.Groups -Scope CurrentUser
-  ```
-
-- A **Global Administrator** (or Groups Administrator) account, with consent to `Directory.ReadWrite.All` and `Group.Read.All`.
-- An existing **security group** containing the people allowed to create groups, for example `GRP-Createurs-Equipes`.
-- A **Microsoft Entra ID P1** license for the members of that group.
-
-## Usage
-
-Restrict creation to the `GRP-Createurs-Equipes` group:
-
-```powershell
-.\Restrict-M365GroupCreation.ps1 -GroupName "GRP-Createurs-Equipes"
-```
-
-Roll back (everyone can create groups again):
-
-```powershell
-.\Restrict-M365GroupCreation.ps1 -AllowEveryone
-```
-
-Full help:
-
-```powershell
-Get-Help .\Restrict-M365GroupCreation.ps1 -Full
-```
-
-Expected result: `EnableGroupCreation` is `False` and `GroupCreationAllowedGroupId` contains the Id of the allowed group.
+| Scripts | Module installed automatically | Minimum role |
+|---|---|---|
+| `Exchange-*` | `Install-Module ExchangeOnlineManagement -Scope CurrentUser` | Exchange Administrator |
+| `SharePoint-*`, `OneDrive-*` | `Install-Module Microsoft.Online.SharePoint.PowerShell -Scope CurrentUser` | SharePoint Administrator |
+| `Teams-*` | `Install-Module MicrosoftTeams -Scope CurrentUser` | Teams Administrator |
+| `Restrict-M365GroupCreation` | `Install-Module Microsoft.Graph.Beta.Identity.DirectoryManagement, Microsoft.Graph.Beta.Groups -Scope CurrentUser` | Global Administrator, Entra ID P1 license for the members of the allowed group |
 
 ## Good to know
 
-- **Sign-in**: in a PowerShell console, the Windows sign-in window opens as usual. In **PowerShell ISE**, which cannot display it, the script automatically switches to **device code sign-in**: open https://microsoft.com/devicelogin and enter the code shown. Use `-UseDeviceCode` to force this mode elsewhere.
-- **Delay**: allow 30 minutes or more for the restriction to apply everywhere, especially in Teams.
-- **Administrators** (Global Administrator, Teams Administrator, etc.) can still create groups even if they are not members of the allowed group.
-- **"Module not found" error**: install the two Beta modules above. They are not part of the standard `Microsoft.Graph` module.
-- **Don't mix** Graph and Exchange Online in the same PowerShell window: both modules ship different versions of the authentication library and may conflict.
+- **Tenant sign-in**: each script only signs in if the session is not already connected, then shows the account and tenant used. To target a specific tenant: `-UserPrincipalName` (Exchange scripts), `-TenantName` (SharePoint, OneDrive), `-TenantId` (Teams, Restrict-M365GroupCreation).
+- **PowerShell ISE**: ISE cannot display the modern Windows sign-in window. The Exchange, Teams and Graph scripts then automatically switch to **device code sign-in**: open https://microsoft.com/devicelogin and enter the code shown.
+- **SharePoint and OneDrive**: preferably use **Windows PowerShell 5.1**. In PowerShell 7, the script loads the SharePoint Online module in Windows PowerShell compatibility mode.
+- **Don't mix** Graph and Exchange Online in the same PowerShell window: both modules ship different versions of the authentication library and may conflict. Use one window per service.
+- **Run the scripts as files** (`.\Script-Name.ps1`): do not paste their content into the console, where multi-line text would be cut.
+- **Test** on a test tenant first.
 
 ## Author
 
-Laurent Cloux, KEYSIA, Microsoft Certified Trainer. Script shared as part of Microsoft 365 training courses.
+Laurent Cloux, KEYSIA, Microsoft Certified Trainer.
 
-[MIT](LICENSE) license: free to reuse, no warranty. Test on a test tenant first.
+[MIT](LICENSE) license: free to reuse, no warranty.

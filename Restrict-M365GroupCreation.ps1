@@ -1,49 +1,41 @@
 ﻿<#
 .SYNOPSIS
-    Restricts Microsoft 365 group (and Teams team) creation to the members of a single security group.
-    Réserve la création des groupes Microsoft 365 (et des équipes Teams) aux membres d'un groupe de sécurité.
+    Réserve la création des groupes Microsoft 365 (et des équipes Teams) aux membres d'un seul groupe de sécurité.
 
 .DESCRIPTION
-    The script configures the "Group.Unified" directory setting in Microsoft Entra ID through
-    Microsoft Graph PowerShell (Beta):
+    Le script règle le paramètre d'annuaire « Group.Unified » de Microsoft Entra ID avec
+    Microsoft Graph PowerShell (Beta) :
       - EnableGroupCreation         = False
-      - GroupCreationAllowedGroupId = Id of the allowed group
-    If the "Group.Unified" setting does not exist yet in the tenant, it is created first.
-    Use -AllowEveryone to roll back (everyone can create groups again).
-
-    Le script règle le paramètre d'annuaire « Group.Unified » de Microsoft Entra ID via
-    Microsoft Graph PowerShell (Beta). Le paramètre est créé s'il n'existe pas encore.
-    -AllowEveryone permet de revenir en arrière (tout le monde peut de nouveau créer des groupes).
+      - GroupCreationAllowedGroupId = identifiant du groupe autorisé
+    Si le paramètre « Group.Unified » n'existe pas encore dans le locataire, il est d'abord créé.
+    -AllowEveryone permet de revenir en arrière : tout le monde peut de nouveau créer des groupes.
 
 .PARAMETER GroupName
-    Display name of the security group whose members are allowed to create groups.
     Nom du groupe de sécurité dont les membres pourront créer des groupes.
-
 .PARAMETER AllowEveryone
-    Rolls back the restriction: everyone can create groups again.
     Annule la restriction : tout le monde peut de nouveau créer des groupes.
-
+.PARAMETER TenantId
+    Locataire cible (GUID ou domaine, par exemple contoso.onmicrosoft.com). Force une nouvelle connexion.
 .PARAMETER UseDeviceCode
-    Forces sign-in with a device code. Used automatically in Windows PowerShell ISE,
-    where the default Windows sign-in window (WAM) cannot open.
-    Force la connexion par code d'appareil. Utilisé automatiquement dans PowerShell ISE.
+    Force la connexion par code d'appareil. Utilisé automatiquement dans PowerShell ISE,
+    où la fenêtre de connexion Windows (WAM) ne peut pas s'ouvrir.
 
 .EXAMPLE
     .\Restrict-M365GroupCreation.ps1 -GroupName "GRP-Createurs-Equipes"
-    Only members of GRP-Createurs-Equipes can create Microsoft 365 groups and Teams teams.
-
+    Seuls les membres de GRP-Createurs-Equipes peuvent créer des groupes Microsoft 365 et des équipes Teams.
 .EXAMPLE
     .\Restrict-M365GroupCreation.ps1 -AllowEveryone
-    Removes the restriction.
+    Supprime la restriction.
 
 .NOTES
-    Author  : Laurent Cloux - KEYSIA
-    Version : 1.0 (2026-10)
-    License : MIT
-    Requires: Microsoft.Graph.Beta.Identity.DirectoryManagement, Microsoft.Graph.Beta.Groups
-              Global Administrator or Groups Administrator + Directory.ReadWrite.All consent
-              Microsoft Entra ID P1 for the members of the allowed group
-    Based on: https://learn.microsoft.com/microsoft-365/solutions/manage-creation-of-groups
+    Auteur   : Laurent Cloux - KEYSIA
+    Version  : 1.0 (2026-10)
+    Licence  : MIT
+    Modules  : installés automatiquement pour l'utilisateur courant s'ils manquent
+    Prérequis: modules Microsoft.Graph.Beta.Identity.DirectoryManagement et Microsoft.Graph.Beta.Groups ;
+               rôle Administrateur général (ou Administrateur des groupes) et consentement à Directory.ReadWrite.All ;
+               licence Microsoft Entra ID P1 pour les membres du groupe autorisé
+    Source   : https://learn.microsoft.com/fr-fr/microsoft-365/solutions/manage-creation-of-groups
 #>
 
 [CmdletBinding(DefaultParameterSetName = 'Restrict')]
@@ -54,27 +46,52 @@ param(
     [Parameter(Mandatory = $true, ParameterSetName = 'Rollback')]
     [switch]$AllowEveryone,
 
+    [string]$TenantId,
+
     [switch]$UseDeviceCode
 )
 
 $ErrorActionPreference = 'Stop'
+
+# --- Required modules: installed for the current user if missing, then loaded ---
+# --- Modules requis : installés pour l'utilisateur courant s'ils manquent, puis chargés ---
+function Install-RequiredModule {
+    param([string[]]$Name)
+    foreach ($m in $Name) {
+        if (-not (Get-Module -ListAvailable -Name $m)) {
+            Write-Host "Installing module $m (current user)... / Installation du module $m..." -ForegroundColor Yellow
+            [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+            if (-not (Get-PackageProvider -ListAvailable -Name NuGet -ErrorAction SilentlyContinue)) {
+                Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Scope CurrentUser -Force | Out-Null
+            }
+            Install-Module -Name $m -Scope CurrentUser -Repository PSGallery -Force -AllowClobber
+        }
+        if ($m -eq 'Microsoft.Online.SharePoint.PowerShell' -and $PSVersionTable.PSEdition -eq 'Core') {
+            Import-Module $m -UseWindowsPowerShell -DisableNameChecking -WarningAction SilentlyContinue
+        } else {
+            Import-Module $m -DisableNameChecking
+        }
+    }
+}
+Install-RequiredModule -Name 'Microsoft.Graph.Beta.Identity.DirectoryManagement', 'Microsoft.Graph.Beta.Groups'
 $templateId = '62375ab9-6b52-47ed-826b-58e47e0e304b'   # "Group.Unified" settings template
 $scopes     = @('Directory.ReadWrite.All', 'Group.Read.All')
 
-Import-Module Microsoft.Graph.Beta.Identity.DirectoryManagement
-Import-Module Microsoft.Graph.Beta.Groups
 
-# --- Sign in (skipped if already connected with the required scopes) ---
+# --- Sign in to the tenant (skipped if already connected with the required scopes) ---
+# --- Connexion au locataire (ignorée si déjà connecté avec les bonnes permissions) ---
 $context = Get-MgContext
 $missing = if ($context) { $scopes | Where-Object { $context.Scopes -notcontains $_ } } else { $scopes }
+if ($TenantId -and $context) { Disconnect-MgGraph | Out-Null; $missing = $scopes }
 if ($missing) {
+    $c = @{ Scopes = $scopes; NoWelcome = $true }
+    if ($TenantId) { $c.TenantId = $TenantId }
     # PowerShell ISE cannot display the Windows sign-in window (WAM): use a device code there.
-    if ($psISE -or $UseDeviceCode) {
-        Connect-MgGraph -Scopes $scopes -UseDeviceCode -NoWelcome
-    } else {
-        Connect-MgGraph -Scopes $scopes -NoWelcome
-    }
+    if ($psISE -or $UseDeviceCode) { $c.UseDeviceCode = $true }
+    Connect-MgGraph @c
 }
+$context = Get-MgContext
+Write-Host "Connected to tenant $($context.TenantId) as $($context.Account)" -ForegroundColor Green
 
 # --- Get the "Group.Unified" setting, or create it ---
 $settingId = (Get-MgBetaDirectorySetting | Where-Object TemplateId -eq $templateId).Id
